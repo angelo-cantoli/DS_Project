@@ -39,7 +39,7 @@ public class UDPMulticastSender extends Thread {
 
     public void stopSender() {
         running = false;
-        this.interrupt(); // Risveglia il thread se è bloccato nello sleep
+        this.interrupt();
     }
 
     public String getMulticastGroup() {
