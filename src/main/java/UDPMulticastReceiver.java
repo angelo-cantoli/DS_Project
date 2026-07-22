@@ -3,14 +3,12 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 
-public class UDPMulticastReceiver extends Thread{
-
+public class UDPMulticastReceiver extends Thread {
     private final String multicastGroup;
     private final int multicastPort;
     private final ClusterManager clusterManager;
     private final String nodeId;
     private boolean running = true;
-
 
     public UDPMulticastReceiver(String multicastGroup, int multicastPort, ClusterManager clusterManager, String nodeId) {
         this.multicastGroup = multicastGroup;
@@ -22,7 +20,7 @@ public class UDPMulticastReceiver extends Thread{
     @Override
     public void run() {
         try (MulticastSocket socket = new MulticastSocket(multicastPort)) {
-            socket.setInterface(InetAddress.getByName("127.0.0.1"));
+            // Removed 127.0.0.1 hardcode to allow binding to physical Wi-Fi/Ethernet cards
             InetAddress group = InetAddress.getByName(multicastGroup);
             socket.joinGroup(group);
 
@@ -34,14 +32,16 @@ public class UDPMulticastReceiver extends Thread{
                 String receivedData = new String(packet.getData(),  0, packet.getLength());
 
                 String[] parts = receivedData.split(",");
-                if(parts.length == 3){
+                if(parts.length >= 3){
                     String senderId = parts[0];
                     String senderIp = parts[1];
                     int senderPort = Integer.parseInt(parts[2]);
+                    int activeJobs = parts.length > 3 ? Integer.parseInt(parts[3]) : 0;
+                    int term = parts.length > 4 ? Integer.parseInt(parts[4]) : 0;
+                    boolean isLeader = parts.length > 5 ? Boolean.parseBoolean(parts[5]) : false;
 
-                    //Costruisco il NodeInfo e mando heartbeat al clustemanager
                     if(!senderId.equals(nodeId)){
-                        NodeInfo info = new NodeInfo(senderId, senderIp, senderPort);
+                        NodeInfo info = new NodeInfo(senderId, senderIp, senderPort, activeJobs, term, isLeader);
                         clusterManager.isAlive(info);
                     }
                 }

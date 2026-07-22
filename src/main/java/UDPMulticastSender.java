@@ -4,29 +4,34 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 
 public class UDPMulticastSender extends Thread {
-
     private final String multicastGroup;
     private final int multicastPort;
     private final NodeInfo info;
+    private final Executor executor;
+    private final ClusterManager clusterManager;
     private boolean running = true;
 
-
-    public UDPMulticastSender(String multicastGroup, int multicastPort, NodeInfo info) {
+    public UDPMulticastSender(String multicastGroup, int multicastPort, NodeInfo info, Executor executor, ClusterManager clusterManager) {
         this.multicastGroup = multicastGroup;
         this.multicastPort = multicastPort;
         this.info = info;
+        this.executor = executor;
+        this.clusterManager = clusterManager;
     }
 
     public void run() {
         try (MulticastSocket socket = new MulticastSocket()) {
             InetAddress group = InetAddress.getByName(multicastGroup);
 
-            String payload = info.getNodeId() + "," + info.getIpAddress() + "," + info.getPort();
-            byte[] payloadBytes = payload.getBytes();
-
-            DatagramPacket packet = new DatagramPacket(payloadBytes, payloadBytes.length, group, info.getPort());
-
             while(running) {
+                int activeJobs = executor != null ? executor.getActiveJobsCount() : 0;
+                int term = clusterManager != null ? clusterManager.getCurrentTerm() : 0;
+                boolean isLeader = clusterManager != null && clusterManager.isLeader();
+
+                String payload = info.getNodeId() + "," + info.getIpAddress() + "," + info.getPort() + "," + activeJobs + "," + term + "," + isLeader;
+                byte[] payloadBytes = payload.getBytes();
+
+                DatagramPacket packet = new DatagramPacket(payloadBytes, payloadBytes.length, group, multicastPort);
                 socket.send(packet);
                 Thread.sleep(3000);
             }
@@ -40,17 +45,5 @@ public class UDPMulticastSender extends Thread {
     public void stopSender() {
         running = false;
         this.interrupt();
-    }
-
-    public String getMulticastGroup() {
-        return multicastGroup;
-    }
-
-    public int getMulticastPort() {
-        return multicastPort;
-    }
-
-    public NodeInfo getInfo() {
-        return info;
     }
 }

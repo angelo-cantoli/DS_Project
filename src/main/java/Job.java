@@ -1,22 +1,24 @@
 import java.io.Serializable;
 
-public class Job implements Serializable {
+public class Job<T> implements Serializable {
     private final String jobId;
-    private final int simulatedDurationMs;
+    private final SerializableSupplier<T> task;
 
-    public Job(String jobId, int simulatedDurationMs) {
+    public Job(String jobId, SerializableSupplier<T> task) {
         this.jobId = jobId;
-        this.simulatedDurationMs = simulatedDurationMs;
+        this.task = task;
     }
 
     public String getJobId() {
         return jobId;
     }
-    public int getSimulatedDurationMs() {
-        return simulatedDurationMs;
+
+    public T execute() {
+        return task.get();
     }
 
+    @Override
     public String toString() {
-        return ("Job{" + "jobId=" + jobId + " | " + "duration=" + simulatedDurationMs + " ms}");
+        return "Job{jobId='" + jobId + "'}";
     }
 }
