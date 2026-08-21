@@ -37,10 +37,15 @@ public class ClusterManager {
     }
 
     private void loadRaftState() {
+        // Create a File object using the node's unique ID to avoid conflicts
         java.io.File file = new java.io.File(selfNodeId + "_raft.properties");
+        // Check if a previous state exists on disk (node is recovering from a crash/restart)
         if (file.exists()) {
+            // Use try-with-resources to ensure the input stream is automatically closed
             try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+                // Instantiate a Properties object to handle key-value pairs
                 java.util.Properties props = new java.util.Properties();
+                // Load the configuration from the input stream
                 props.load(in);
                 this.currentTerm = Integer.parseInt(props.getProperty("currentTerm", "0"));
                 this.votedFor = props.getProperty("votedFor", null);
@@ -123,6 +128,11 @@ public class ClusterManager {
         
         // 1. Evict dead nodes
         activeNodes.entrySet().removeIf(entry -> {
+
+            if (entry.getKey().equals(selfNodeId)) {
+                return false;
+            }
+
             boolean isDead = (now - entry.getValue().lastHeartbeat) > UDP_TIMEOUT;
             if (isDead) {
                 System.out.println(entry.getKey() + " is dead");
@@ -200,6 +210,34 @@ public class ClusterManager {
     public NodeInfo getNodeInfo(String nodeId) {
         NodeRecord record = activeNodes.get(nodeId);
         return record != null ? record.info : null;
+    }
+    //DA VEDERE BENE
+    public synchronized void updateLocalNodeLoad(int currentLoad, int term, boolean isLeader) {
+        NodeRecord record = activeNodes.get(selfNodeId);
+        if (record != null) {
+            // Update the existing record with the fresh load while keeping IP and Port intact
+            NodeInfo freshInfo = new NodeInfo(
+                    selfNodeId,
+                    record.info.getIpAddress(),
+                    record.info.getPort(),
+                    currentLoad,
+                    term,
+                    isLeader
+            );
+            activeNodes.put(selfNodeId, new NodeRecord(freshInfo, System.currentTimeMillis()));
+        } else {
+            // Fallback if self record isn't in the map yet (e.g., right after election)
+            // Note: 127.0.0.1 and port 1099 are safe defaults if fallback is ever triggered
+            NodeInfo freshInfo = new NodeInfo(
+                    selfNodeId,
+                    "127.0.0.1",
+                    1099,
+                    currentLoad,
+                    term,
+                    isLeader
+            );
+            activeNodes.put(selfNodeId, new NodeRecord(freshInfo, System.currentTimeMillis()));
+        }
     }
 
     public void stop() {

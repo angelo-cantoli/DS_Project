@@ -79,7 +79,20 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         System.out.println("Submitting job: " + job.getJobId());
 
         if (isLeader()) {
+            clusterManager.updateLocalNodeLoad(getActiveJobsCount(), clusterManager.getCurrentTerm(), true);
             Set<NodeInfo> nodes = clusterManager.getAliveNodes();
+
+            // --- STAMPA DI VERIFICA ---
+            System.out.println("--- [CHECK LOAD STREAM] ---");
+            for (NodeInfo n : nodes) {
+                System.out.println("Node ID nella mappa: " + n.getNodeId() + " | ActiveJobs visti dallo stream: " + n.getActiveJobs());
+            }
+            System.out.println("Mio nodeId locale: " + this.nodeId + " | Miei job reali attivi: " + getActiveJobsCount());
+
+            if (nodes.isEmpty()) {
+                executeJob(job);
+                return job.getJobId();
+            }
             
             if (nodes.isEmpty()) {
                 executeJob(job);
@@ -168,23 +181,35 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
                 try {
                     Registry registry = LocateRegistry.getRegistry(leaderInfo.getIpAddress(), leaderInfo.getPort());
                     RemoteExecutorInterface remoteLeader = (RemoteExecutorInterface) registry.lookup("Executor");
-                    return remoteLeader.getJobResult(jobId); 
+                    return remoteLeader.getJobResult(jobId);
                 } catch (Exception e) {
                     return null;
                 }
             }
         } else {
+            // I am the Leader: Scatter-gather results safely using local-only queries
             for (NodeInfo node : clusterManager.getAliveNodes()) {
                 if (node.getNodeId().equals(this.nodeId)) continue;
                 try {
                     Registry registry = LocateRegistry.getRegistry(node.getIpAddress(), node.getPort());
                     RemoteExecutorInterface remoteExec = (RemoteExecutorInterface) registry.lookup("Executor");
-                    Object remoteResult = remoteExec.getJobResult(jobId);
+
+                    // --- FIX: Call getLocalJobResult to prevent the Ping-Pong recursion loop ---
+                    Object remoteResult = remoteExec.getLocalJobResult(jobId);
+
                     if (remoteResult != null) return remoteResult;
-                } catch (Exception e) { }
+                } catch (Exception e) {
+
+                }
             }
         }
         return null;
+    }
+
+    @Override
+    public Object getLocalJobResult(String jobId) throws RemoteException {
+        // Returns the result directly from local memory without triggering any forwarding or recursion
+        return jobResults.get(jobId);
     }
 
     @Override
