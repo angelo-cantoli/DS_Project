@@ -27,6 +27,10 @@ public class UDPMulticastSender extends Thread {
                 int activeJobs = executor != null ? executor.getActiveJobsCount() : 0;
                 int term = clusterManager != null ? clusterManager.getCurrentTerm() : 0;
                 boolean isLeader = clusterManager != null && clusterManager.isLeader();
+                //DEBUG
+                if (activeJobs > 0) {
+                    System.out.println("[UDP SENDER] My real load is: " + activeJobs + ". Sending to cluster...");
+                }
 
                 String payload = info.getNodeId() + "," + info.getIpAddress() + "," + info.getPort() + "," + activeJobs + "," + term + "," + isLeader;
                 byte[] payloadBytes = payload.getBytes();

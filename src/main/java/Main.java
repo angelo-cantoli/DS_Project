@@ -14,6 +14,14 @@ public class Main {
         String multicastGroup = "230.0.0.0";
         int multicastPort = 4446;
 
+        //----------------------------------------------
+        //------ IMPOSTARE A MANO TALE PARAMETRO -------
+        //----------------------------------------------
+        String realIp = "192.168.178.40";
+        System.setProperty("java.rmi.server.hostname", realIp);
+        System.out.println("[INFO] Node " + nodeId + " is binding to IP: " + realIp + " on port " + rmiPort);
+
+
         try {
             // 1. Initialize Cluster Manager with Raft logic
             ClusterManager clusterManager = new ClusterManager(nodeId, expectedClusterSize);
@@ -24,9 +32,6 @@ public class Main {
             // Create RMI Registry locally
             Registry registry = LocateRegistry.createRegistry(rmiPort);
             registry.rebind("Executor", executor);
-
-            // Dynamically get the real LAN IP address instead of 127.0.0.1
-            String realIp = java.net.InetAddress.getLocalHost().getHostAddress();
 
             // Manually add self
             NodeInfo selfInfo = new NodeInfo(nodeId, realIp, rmiPort, 0, 0, false);

@@ -1,3 +1,0 @@
-@echo off
-echo Starting API Gateway...
-mvn exec:java "-Dexec.mainClass=Gateway"
