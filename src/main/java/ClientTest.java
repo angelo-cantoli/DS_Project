@@ -110,15 +110,8 @@ public class ClientTest {
 
                 final int jobNumber = i;
 
-                String jobId =
-                        "stress-job-"
-                                + jobNumber
-                                + "-"
-                                + System.currentTimeMillis();
-
                 Job<Integer> computeJob =
                         new Job<>(
-                                jobId,
                                 () -> {
 
                                     System.out.println(

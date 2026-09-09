@@ -76,6 +76,9 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
 
     @Override
     public String submitJob(Job<?> job) throws RemoteException {
+        if (job.getJobId() == null) {
+            job.setJobId("job-" + this.nodeId + "-" + java.util.UUID.randomUUID().toString());
+        }
         System.out.println("Submitting job: " + job.getJobId());
 
         if (isLeader()) {

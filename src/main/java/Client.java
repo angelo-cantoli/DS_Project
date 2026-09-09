@@ -58,8 +58,7 @@ public class Client {
             RemoteExecutorInterface executor = (RemoteExecutorInterface) registry.lookup("Executor");
 
             // 3. Create a generic Job
-            String jobId = "job-" + System.currentTimeMillis();
-            Job<Integer> computeJob = new Job<>(jobId, () -> {
+            Job<Integer> computeJob = new Job<>(() -> {
                 System.out.println("[Job Execution] Calculating sum of 1 to 1000...");
                 int sum = 0;
                 for (int i = 1; i <= 1000; i++) {
