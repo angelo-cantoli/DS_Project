@@ -11,37 +11,32 @@ public class Main {
         String nodeId = args[0];
         int rmiPort = Integer.parseInt(args[1]);
         int expectedClusterSize = Integer.parseInt(args[2]);
+        //la "stanza" che abbiamo impostato per il multicast 230.0.0.0:4446
         String multicastGroup = "230.0.0.0";
         int multicastPort = 4446;
 
         //----------------------------------------------
-        //------ IMPOSTARE A MANO TALE PARAMETRO -------
+        //------ DOBBIAMO METTERCELO A MANO!!! -------
         //----------------------------------------------
-        String realIp = "192.168.178.40";
+        String realIp = "192.168.1.56";
         System.setProperty("java.rmi.server.hostname", realIp);
         System.out.println("[INFO] Node " + nodeId + " is binding to IP: " + realIp + " on port " + rmiPort);
 
 
         try {
-            // 1. Initialize Cluster Manager with Raft logic
             ClusterManager clusterManager = new ClusterManager(nodeId, expectedClusterSize);
 
-            // 2. Setup RMI Executor
             Executor executor = new Executor(nodeId, clusterManager);
-
-            // Create RMI Registry locally
             Registry registry = LocateRegistry.createRegistry(rmiPort);
             registry.rebind("Executor", executor);
 
-            // Manually add self
             NodeInfo selfInfo = new NodeInfo(nodeId, realIp, rmiPort, 0, 0, false);
             clusterManager.isAlive(selfInfo);
 
-            // 3. Start Multicast discovery
+            //Start Multicast discovery
             UDPMulticastReceiver receiver = new UDPMulticastReceiver(multicastGroup, multicastPort, clusterManager, nodeId);
             receiver.start();
-            
-            // Sender needs reference to ClusterManager to broadcast current Term
+
             UDPMulticastSender sender = new UDPMulticastSender(multicastGroup, multicastPort, selfInfo, executor, clusterManager);
             sender.start();
 
@@ -54,6 +49,8 @@ public class Main {
                         Thread.sleep(5000);
                         System.out.println("[Raft Status] Leader: " + clusterManager.getCurrentLeader() + 
                                          " | Term: " + clusterManager.getCurrentTerm() +
+                                         " | LastLogIndex: " + clusterManager.getRaftLog().getLastLogIndex() +
+                                         " | LastLogTerm: " + clusterManager.getRaftLog().getLastLogTerm() +
                                          " | Am I Leader? " + clusterManager.isLeader());
                     }
                 } catch (InterruptedException e) { }

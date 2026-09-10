@@ -6,6 +6,7 @@ public class NodeInfo implements Serializable {
     private final String ipAddress;
     private final int port;
     private final int activeJobs;
+    //epoch of the election
     private final int term;
     private final boolean isLeader;
 
@@ -25,6 +26,7 @@ public class NodeInfo implements Serializable {
     public int getTerm() { return term; }
     public boolean isLeader() { return isLeader; }
 
+    //define when two nodes are equals or not to avoid duplicates on the cluster
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

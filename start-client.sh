@@ -8,5 +8,5 @@
 #fi
 
 # Display startup message and launch the client via Maven
-echo "Starting Client and listening the network..."
-mvn exec:java -Dexec.mainClass="Client"
+echo "Starting ClientTest and listening the network..."
+mvn exec:java -Dexec.mainClass="ClientTest"
