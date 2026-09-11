@@ -65,10 +65,6 @@ public class RaftLog {
         return new ArrayList<>(entries.subList(fromIndex, entries.size()));
     }
 
-    public synchronized List<LogEntryJob> getAllEntries() {
-        return Collections.unmodifiableList(new ArrayList<>(entries));
-    }
-
     public synchronized boolean isUpToDate(int candidateLastLogIndex, int candidateLastLogTerm) {
         int myLastLogTerm = getLastLogTerm();
         int myLastLogIndex = getLastLogIndex();

@@ -16,7 +16,7 @@ public class LogEntryJob implements Serializable {
     private final int index;
     private final Type type;
     private final String jobId;
-    private final Object payload; // Payload leggero (ID del nodo, metadati, attempt, ecc.)
+    private final Object payload;
 
     public LogEntryJob(int term, int index, Type type, String jobId, Object payload) {
         this.term = term;

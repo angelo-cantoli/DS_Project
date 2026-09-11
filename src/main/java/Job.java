@@ -41,7 +41,7 @@ public class Job<T> implements Serializable {
         return clientId;
     }
 
-    public void setClientId(String clientId) {
+     void setClientId(String clientId) {
         this.clientId = clientId;
     }
 

@@ -6,7 +6,6 @@ public class NodeInfo implements Serializable {
     private final String ipAddress;
     private final int port;
     private final int activeJobs;
-    //epoch of the election
     private final int term;
     private final boolean isLeader;
 

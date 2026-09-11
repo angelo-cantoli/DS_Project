@@ -4,7 +4,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class JobStateMachine {
     private final Map<String, JobMetadata> jobs = new ConcurrentHashMap<>();
-    // Mappa per la deduplicazione: clientId -> (requestId -> jobId)
     private final Map<String, Map<Long, String>> clientRequests = new ConcurrentHashMap<>();
     private int lastAppliedIndex = 0;
 
@@ -19,8 +18,6 @@ public class JobStateMachine {
                     Job<?> job = (Job<?>) entry.getPayload();
                     JobMetadata meta = new JobMetadata(job);
                     jobs.put(entry.getJobId(), meta);
-
-                    // Registra nella mappa di deduplicazione se sono presenti clientId e requestId
                     if (job.getClientId() != null && job.getRequestId() > 0) {
                         clientRequests.computeIfAbsent(job.getClientId(), k -> new ConcurrentHashMap<>())
                                       .put(job.getRequestId(), entry.getJobId());

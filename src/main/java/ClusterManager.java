@@ -33,7 +33,6 @@ public class ClusterManager {
     private final RaftLog raftLog;
     private final JobStateMachine jobStateMachine = new JobStateMachine();
 
-    // Raft Leader Volatile State
     private final Map<String, Integer> nextIndex = new ConcurrentHashMap<>();
     private final Map<String, Integer> matchIndex = new ConcurrentHashMap<>();
 
@@ -57,15 +56,10 @@ public class ClusterManager {
     }
 
     private void loadRaftState() {
-        // Create a File object using the node's unique ID to avoid conflicts
         java.io.File file = new java.io.File(selfNodeId + "_raft.properties");
-        // Check if a previous state exists on disk (node is recovering from a crash/restart)
         if (file.exists()) {
-            // Use try-with-resources to ensure the input stream is automatically closed
             try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
-                // Instantiate a Properties object to handle key-value pairs
                 java.util.Properties props = new java.util.Properties();
-                // Load the configuration from the input stream
                 props.load(in);
                 this.currentTerm = Integer.parseInt(props.getProperty("currentTerm", "0"));
                 this.votedFor = props.getProperty("votedFor", null);
@@ -88,7 +82,6 @@ public class ClusterManager {
     }
 
     private void resetElectionTimeout() {
-        // Random timeout between 5s and 10s to prevent split votes (like Raft)
         electionTimeout = 5000 + random.nextInt(5000);
     }
 
@@ -103,13 +96,10 @@ public class ClusterManager {
 
     public synchronized void isAlive(NodeInfo info) {
         activeNodes.put(info.getNodeId(), new NodeRecord(info, System.currentTimeMillis()));
-        
-        // If someone has a higher term, immediately step down
         if (info.getTerm() > currentTerm) {
             stepDown(info.getTerm());
         }
-        
-        // If the packet is from the acknowledged leader of the current term, reset timer
+
         if (info.isLeader() && info.getTerm() >= currentTerm) {
             currentLeader = info.getNodeId();
             if (currentTerm != info.getTerm()) {
@@ -131,7 +121,7 @@ public class ClusterManager {
 
     public synchronized VoteResponse handleRequestVote(int candidateTerm, String candidateId, int candidateLastLogIndex, int candidateLastLogTerm) {
         if (candidateTerm > currentTerm) {
-            stepDown(candidateTerm); // Someone with a higher term is running, respect it
+            stepDown(candidateTerm);
         }
         
         boolean canVote = (candidateTerm == currentTerm) && (votedFor == null || votedFor.equals(candidateId));
@@ -140,7 +130,7 @@ public class ClusterManager {
         if (canVote && logOk) {
             votedFor = candidateId;
             saveRaftState();
-            lastLeaderHeartbeat = System.currentTimeMillis(); // grant vote and reset our own election timer
+            lastLeaderHeartbeat = System.currentTimeMillis();
             System.out.println("[" + selfNodeId + " Raft Election] Vote GRANTED to " + candidateId + " for Term " + candidateTerm +
                     " (CandidateLog: [" + candidateLastLogIndex + ", Term " + candidateLastLogTerm + "], MyLog: [" + raftLog.getLastLogIndex() + ", Term " + raftLog.getLastLogTerm() + "])");
             return new VoteResponse(currentTerm, true);
@@ -158,7 +148,7 @@ public class ClusterManager {
     public synchronized void checkFailures() {
         long now = System.currentTimeMillis();
         
-        // 1. Evict dead nodes
+        //No dead nodes
         activeNodes.entrySet().removeIf(entry -> {
 
             if (entry.getKey().equals(selfNodeId)) {
@@ -175,7 +165,7 @@ public class ClusterManager {
             return isDead;
         });
 
-        // 2. Election Timeout Check
+        //Election Timeout Check
         if (state != NodeState.LEADER && (now - lastLeaderHeartbeat) > electionTimeout) {
             startElection();
         }
@@ -185,7 +175,7 @@ public class ClusterManager {
         synchronized(this) {
             state = NodeState.CANDIDATE;
             currentTerm++;
-            votedFor = selfNodeId; // Vote for self
+            votedFor = selfNodeId;
             saveRaftState();
             lastLeaderHeartbeat = System.currentTimeMillis();
             resetElectionTimeout();
@@ -196,10 +186,8 @@ public class ClusterManager {
         final int termToRequest = currentTerm;
         final int lastLogIndex = raftLog.getLastLogIndex();
         final int lastLogTerm = raftLog.getLastLogTerm();
-        // Calculate Quorum strictly based on expected cluster size to prevent Split-Brain!
         final int quorum = (expectedClusterSize / 2) + 1; 
 
-        // Spin up a thread to request votes over RMI without blocking the heartbeat manager
         new Thread(() -> {
             int votes = 1; // Start with 1 because we voted for ourselves
             
@@ -208,7 +196,6 @@ public class ClusterManager {
                 try {
                     Registry reg = LocateRegistry.getRegistry(record.info.getIpAddress(), record.info.getPort());
                     RemoteExecutorInterface stub = (RemoteExecutorInterface) reg.lookup("Executor");
-                    // RMI Call passing candidate's log completeness
                     VoteResponse voteResp = stub.requestVote(termToRequest, selfNodeId, lastLogIndex, lastLogTerm);
                     if (voteResp != null) {
                         if (voteResp.getTerm() > termToRequest) {
@@ -264,7 +251,6 @@ public class ClusterManager {
     public synchronized void updateLocalNodeLoad(int currentLoad, int term, boolean isLeader) {
         NodeRecord record = activeNodes.get(selfNodeId);
         if (record != null) {
-            // Update the existing record with the fresh load while keeping IP and Port intact
             NodeInfo freshInfo = new NodeInfo(
                     selfNodeId,
                     record.info.getIpAddress(),
@@ -275,8 +261,6 @@ public class ClusterManager {
             );
             activeNodes.put(selfNodeId, new NodeRecord(freshInfo, System.currentTimeMillis()));
         } else {
-            // Fallback if self record isn't in the map yet (e.g., right after election)
-            // Note: 127.0.0.1 and port 1099 are safe defaults if fallback is ever triggered
             NodeInfo freshInfo = new NodeInfo(
                     selfNodeId,
                     "127.0.0.1",
@@ -371,7 +355,7 @@ public class ClusterManager {
                 continue;
             }
 
-            int count = 1; // Self count
+            int count = 1;
             for (String peerId : matchIndex.keySet()) {
                 if (matchIndex.getOrDefault(peerId, 0) >= N) {
                     count++;
@@ -388,7 +372,7 @@ public class ClusterManager {
             raftLog.setCommitIndex(medianCommit);
             System.out.println("[" + selfNodeId + " Leader] Advanced commitIndex to " + medianCommit + " (Quorum: " + quorum + " reached)");
             applyCommittedEntries();
-            notifyAll(); // Unblock waitForCommit
+            notifyAll();
         }
     }
 
@@ -414,13 +398,11 @@ public class ClusterManager {
 
     public synchronized AppendEntriesResponse handleAppendEntries(int term, String leaderId, int prevLogIndex, int prevLogTerm,
                                                                    List<LogEntryJob> entries, int leaderCommit) {
-        // 1. Reply false if term < currentTerm
         if (term < currentTerm) {
             System.out.println("[" + selfNodeId + " Raft] Rejected AppendEntries from " + leaderId + ": stale term " + term + " < " + currentTerm);
             return new AppendEntriesResponse(currentTerm, false, raftLog.getLastLogIndex());
         }
 
-        // 2. If term >= currentTerm, acknowledge leader and reset election timer
         if (term > currentTerm) {
             stepDown(term);
         } else if (state == NodeState.CANDIDATE) {
@@ -429,9 +411,8 @@ public class ClusterManager {
         }
 
         currentLeader = leaderId;
-        lastLeaderHeartbeat = System.currentTimeMillis(); // Reset election timer upon valid AppendEntries!
+        lastLeaderHeartbeat = System.currentTimeMillis();
 
-        // 3. Consistency check: reply false if log doesn't contain an entry at prevLogIndex matching prevLogTerm
         if (prevLogIndex > 0) {
             LogEntryJob prevEntry = raftLog.getEntry(prevLogIndex);
             if (prevEntry == null || prevEntry.getTerm() != prevLogTerm) {
@@ -441,7 +422,6 @@ public class ClusterManager {
             }
         }
 
-        // 4. Append new entries and resolve conflicts
         if (entries != null && !entries.isEmpty()) {
             for (LogEntryJob newEntry : entries) {
                 int idx = newEntry.getIndex();
@@ -458,7 +438,6 @@ public class ClusterManager {
             }
         }
 
-        // 5. Update commitIndex
         if (leaderCommit > raftLog.getCommitIndex()) {
             int newCommit = Math.min(leaderCommit, raftLog.getLastLogIndex());
             raftLog.setCommitIndex(newCommit);
