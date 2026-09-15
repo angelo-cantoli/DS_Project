@@ -1,28 +1,24 @@
 import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
+import java.net.DatagramSocket;
 
 public class UDPMulticastReceiver extends Thread {
-    private final String multicastGroup;
-    private final int multicastPort;
+    private final int port;
     private final ClusterManager clusterManager;
     private final String nodeId;
     private boolean running = true;
 
-    public UDPMulticastReceiver(String multicastGroup, int multicastPort, ClusterManager clusterManager, String nodeId) {
-        this.multicastGroup = multicastGroup;
-        this.multicastPort = multicastPort;
+    // RImosso il gruppo
+    public UDPUnicastReceiver(int port, ClusterManager clusterManager, String nodeId) {
+        this.port = port;
         this.clusterManager = clusterManager;
         this.nodeId = nodeId;
     }
 
     @Override
     public void run() {
-        try (MulticastSocket socket = new MulticastSocket(multicastPort)) {
-            // Removed 127.0.0.1 hardcode to allow binding to physical Wi-Fi/Ethernet cards
-            InetAddress group = InetAddress.getByName(multicastGroup);
-            socket.joinGroup(group);
+        // Sostituito MulticastSocket con DatagramSocket
+        try (DatagramSocket socket = new DatagramSocket(port)) {
 
             byte[] buffer = new byte[256];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -49,8 +45,6 @@ public class UDPMulticastReceiver extends Thread {
                     }
                 }
             }
-
-            socket.leaveGroup(group);
         } catch (IOException e) {
             if (running) {
                 System.out.println("Problema nella ricezione dell'heartbeat: " + e.getMessage());
