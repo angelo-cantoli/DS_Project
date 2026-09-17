@@ -247,31 +247,6 @@ public class ClusterManager {
     public boolean isNodeAlive(String nodeId) {
         return activeNodes.containsKey(nodeId);
     }
-    //DA VEDERE BENE
-    public synchronized void updateLocalNodeLoad(int currentLoad, int term, boolean isLeader) {
-        NodeRecord record = activeNodes.get(selfNodeId);
-        if (record != null) {
-            NodeInfo freshInfo = new NodeInfo(
-                    selfNodeId,
-                    record.info.getIpAddress(),
-                    record.info.getPort(),
-                    currentLoad,
-                    term,
-                    isLeader
-            );
-            activeNodes.put(selfNodeId, new NodeRecord(freshInfo, System.currentTimeMillis()));
-        } else {
-            NodeInfo freshInfo = new NodeInfo(
-                    selfNodeId,
-                    "127.0.0.1",
-                    1099,
-                    currentLoad,
-                    term,
-                    isLeader
-            );
-            activeNodes.put(selfNodeId, new NodeRecord(freshInfo, System.currentTimeMillis()));
-        }
-    }
 
     private synchronized void initLeaderState() {
         nextIndex.clear();

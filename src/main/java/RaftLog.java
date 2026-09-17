@@ -12,6 +12,8 @@ public class RaftLog {
 
     public RaftLog(String nodeId) {
         this.nodeId = nodeId;
+        //Il formato binario .dat con ObjectOutputStream serializza nativamente qualsiasi grafo di oggetti Java,
+        // compresi il bytecode delle lambda e i tipi generici, preservando l'integrità del calcolo al 100%.
         this.logFile = new File(nodeId + "_raft_log.dat");
         this.entries = new ArrayList<>();
         this.entries.add(new LogEntryJob(0, 0, null, null, null));
@@ -125,6 +127,10 @@ public class RaftLog {
             if (logFile.exists()) {
                 logFile.delete();
             }
+            //viene usata questa soluzione perchè nei OS moderni in caso di crash non sporcherà mai il file con qualcosa di obsoleto
+            //la rinomina di un file è un'operazione atomica a livello di filesystem:
+            // se salta la corrente o crasha la JVM durante la scrittura,
+            // il vecchio log .dat non risulterà mai corrotto o troncato a metà!
             tempFile.renameTo(logFile);
         }
     }

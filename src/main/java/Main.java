@@ -1,5 +1,7 @@
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.Arrays;
+import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
@@ -34,11 +36,11 @@ public class Main {
             clusterManager.isAlive(selfInfo);
 
             //Start Multicast discovery
-            UDPMulticastReceiver receiver = new UDPMulticastReceiver(multicastGroup, multicastPort, clusterManager, nodeId);
+            UDPMulticastReceiver receiver = new UDPMulticastReceiver( multicastPort, clusterManager, nodeId);
             receiver.start();
 
             List<String> clusterIps = Arrays.asList("", "");
-            UDPMulticastSender sender = new UDPMulticastSender(multicastGroup, multicastPort, selfInfo, executor, clusterManager);
+            UDPMulticastSender sender = new UDPMulticastSender( clusterIps, multicastPort, selfInfo, executor, clusterManager);
             sender.start();
 
             System.out.println("=== Node " + nodeId + " is running on port " + rmiPort + " ===");

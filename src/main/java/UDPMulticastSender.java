@@ -13,7 +13,7 @@ public class UDPMulticastSender extends Thread {
     private final ClusterManager clusterManager;
     private boolean running = true;
 
-    public UDPUnicastSender(List<String> peerIps, int port, NodeInfo info, Executor executor, ClusterManager clusterManager) {
+    public UDPMulticastSender(List<String> peerIps, int port, NodeInfo info, Executor executor, ClusterManager clusterManager) {
         this.peerIps = peerIps;
         this.port = port;
         this.info = info;

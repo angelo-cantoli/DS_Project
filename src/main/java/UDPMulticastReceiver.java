@@ -9,7 +9,7 @@ public class UDPMulticastReceiver extends Thread {
     private boolean running = true;
 
     // RImosso il gruppo
-    public UDPUnicastReceiver(int port, ClusterManager clusterManager, String nodeId) {
+    public UDPMulticastReceiver(int port, ClusterManager clusterManager, String nodeId) {
         this.port = port;
         this.clusterManager = clusterManager;
         this.nodeId = nodeId;
