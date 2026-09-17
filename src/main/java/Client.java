@@ -1,12 +1,12 @@
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 
 public class Client {
 
-    // Helper class to store discovered node coordinates
     private static class NodeCoordinates {
         final String ip;
         final int port;
@@ -17,72 +17,67 @@ public class Client {
         }
     }
 
-    // Method to dynamically discover a live node using UDP Multicast
     private static NodeCoordinates discoverLiveNode() throws Exception {
         System.out.println("Listening for cluster heartbeats on 230.0.0.0:4446...");
-
         try (MulticastSocket socket = new MulticastSocket(4446)) {
             InetAddress group = InetAddress.getByName("230.0.0.0");
             socket.joinGroup(group);
-
-            // Set a timeout to avoid infinite blocking if the cluster is completely down
             socket.setSoTimeout(10000);
-
             byte[] buffer = new byte[256];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-
-            // Block until the first heartbeat is received from any node
             socket.receive(packet);
-
-            // Parse the payload: senderId, ip, port, activeJobs, term, isLeader
             String payload = new String(packet.getData(), 0, packet.getLength());
             String[] parts = payload.split(",");
-
             String targetIp = parts[1];
             int targetPort = Integer.parseInt(parts[2]);
-
             socket.leaveGroup(group);
-
             return new NodeCoordinates(targetIp, targetPort);
         }
     }
 
+    private static RemoteExecutorInterface getExecutorStub() throws Exception {
+        NodeCoordinates targetNode = discoverLiveNode();
+        System.out.println("Discovered and connecting to Executor at " + targetNode.ip + ":" + targetNode.port);
+        Registry registry = LocateRegistry.getRegistry(targetNode.ip, targetNode.port);
+        return (RemoteExecutorInterface) registry.lookup("Executor");
+    }
+
     public static void main(String[] args) {
         try {
-            // 1. Discover a random active node dynamically
-            NodeCoordinates targetNode = discoverLiveNode();
-            System.out.println("Discovered and connecting to Executor at " + targetNode.ip + ":" + targetNode.port);
+            RemoteExecutorInterface executor = getExecutorStub();
 
-            // 2. Locate the RMI registry of the discovered executor
-            Registry registry = LocateRegistry.getRegistry(targetNode.ip, targetNode.port);
-            RemoteExecutorInterface executor = (RemoteExecutorInterface) registry.lookup("Executor");
-
-            // 3. Create a generic Job
             Job<Integer> computeJob = new Job<>(() -> {
                 System.out.println("[Job Execution] Calculating sum of 1 to 1000...");
                 int sum = 0;
                 for (int i = 1; i <= 1000; i++) {
                     sum += i;
-                    try {
-                        Thread.sleep(2); // Simulate time-consuming work
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    try { Thread.sleep(2); } catch (InterruptedException e) { e.printStackTrace(); }
                 }
                 return sum;
             });
 
-            // 4. Submit the job
-            String returnedId = executor.submitJob(computeJob);
+            String returnedId = null;
+            while (returnedId == null) {
+                try {
+                    returnedId = executor.submitJob(computeJob);
+                } catch (RemoteException e) {
+                    System.err.println("Connection lost while submitting! Reconnecting to a new node...");
+                    executor = getExecutorStub();
+                }
+            }
             System.out.println("Submitted Job ID: " + returnedId);
 
-            // 5. Poll for result on the SAME node
             Object result = null;
             while (result == null) {
-                result = executor.getJobResult(returnedId);
-                if (result == null) {
-                    System.out.println("Waiting for job to finish...");
-                    Thread.sleep(1000);
+                try {
+                    result = executor.getJobResult(returnedId);
+                    if (result == null) {
+                        System.out.println("Waiting for job to finish...");
+                        Thread.sleep(1000);
+                    }
+                } catch (RemoteException e) {
+                    System.err.println("Connection lost while polling! Reconnecting to a new node...");
+                    executor = getExecutorStub();
                 }
             }
 

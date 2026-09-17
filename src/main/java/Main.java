@@ -28,6 +28,7 @@ public class Main {
 
             // 2. Setup RMI Executor
             Executor executor = new Executor(nodeId, clusterManager);
+            clusterManager.setExecutor(executor);
 
             // Create RMI Registry locally
             Registry registry = LocateRegistry.createRegistry(rmiPort);

@@ -6,6 +6,8 @@ import java.util.concurrent.*;
 import java.util.Set;
 import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
+import java.util.ArrayList;
 
 public class Executor extends UnicastRemoteObject implements RemoteExecutorInterface {
     private final String nodeId;
@@ -15,6 +17,11 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
     private AtomicInteger activeJobsCount;
     private final java.io.File walDir;
 
+    // --- State Reconstruction Maps ---
+    private ConcurrentMap<String, Job<?>> localActiveJobs;
+    private ConcurrentMap<String, Job<?>> uncompletedJobs;
+    private ConcurrentMap<String, List<String>> nodeAssignments;
+
     public Executor(String nodeId, ClusterManager clusterManager) throws RemoteException {
         this.nodeId = nodeId;
         this.clusterManager = clusterManager;
@@ -22,6 +29,10 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         this.threadPool = Executors.newFixedThreadPool(4); 
         this.activeJobsCount = new AtomicInteger(0);
         
+        this.localActiveJobs = new ConcurrentHashMap<>();
+        this.uncompletedJobs = new ConcurrentHashMap<>();
+        this.nodeAssignments = new ConcurrentHashMap<>();
+
         this.walDir = new java.io.File("wal_" + nodeId);
         if (!this.walDir.exists()) {
             this.walDir.mkdirs();
@@ -70,7 +81,6 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
 
     @Override
     public boolean requestVote(int term, String candidateId) throws RemoteException {
-        // Forward RMI consensus requests to the local ClusterManager logic
         return clusterManager.handleRequestVote(term, candidateId);
     }
 
@@ -82,22 +92,12 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         System.out.println("Submitting job: " + job.getJobId());
 
         if (isLeader()) {
+            uncompletedJobs.put(job.getJobId(), job);
             clusterManager.updateLocalNodeLoad(getActiveJobsCount(), clusterManager.getCurrentTerm(), true);
             Set<NodeInfo> nodes = clusterManager.getAliveNodes();
 
-            // --- STAMPA DI VERIFICA ---
-            System.out.println("--- [CHECK LOAD STREAM] ---");
-            for (NodeInfo n : nodes) {
-                System.out.println("Node ID nella mappa: " + n.getNodeId() + " | ActiveJobs visti dallo stream: " + n.getActiveJobs());
-            }
-            System.out.println("Mio nodeId locale: " + this.nodeId + " | Miei job reali attivi: " + getActiveJobsCount());
-
             if (nodes.isEmpty()) {
-                executeJob(job);
-                return job.getJobId();
-            }
-            
-            if (nodes.isEmpty()) {
+                assignToNode(this.nodeId, job);
                 executeJob(job);
                 return job.getJobId();
             }
@@ -109,14 +109,17 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
             System.out.println("Leader assigning job to node: " + chosenNode.getNodeId());
 
             if (chosenNode.getNodeId().equals(this.nodeId)) {
+                assignToNode(this.nodeId, job);
                 executeJob(job);
             } else {
                 try {
                     Registry registry = LocateRegistry.getRegistry(chosenNode.getIpAddress(), chosenNode.getPort());
                     RemoteExecutorInterface remoteExec = (RemoteExecutorInterface) registry.lookup("Executor");
+                    assignToNode(chosenNode.getNodeId(), job);
                     remoteExec.executeJob(job);
                 } catch (Exception e) {
                     System.err.println("Failed to forward job to " + chosenNode.getNodeId() + ". Executing locally.");
+                    assignToNode(this.nodeId, job);
                     executeJob(job);
                 }
             }
@@ -139,6 +142,10 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         return job.getJobId();
     }
 
+    private void assignToNode(String targetNodeId, Job<?> job) {
+        nodeAssignments.computeIfAbsent(targetNodeId, k -> new CopyOnWriteArrayList<>()).add(job.getJobId());
+    }
+
     @Override
     public void executeJob(Job<?> job) throws RemoteException {
         executeJob(job, false);
@@ -146,27 +153,30 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
     
     private void executeJob(Job<?> job, boolean isRecovered) {
         if (!isRecovered) {
-            // Write to WAL before executing to guarantee Crash Recovery!
             try (java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(new java.io.FileOutputStream(new java.io.File(walDir, job.getJobId() + ".job")))) {
                 out.writeObject(job);
             } catch (Exception e) { e.printStackTrace(); }
         }
 
+        localActiveJobs.put(job.getJobId(), job);
         activeJobsCount.incrementAndGet();
         threadPool.submit(() -> {
             try {
                 Object result = job.execute();
                 jobResults.put(job.getJobId(), result);
                 
-                // Write result to WAL to survive future crashes
                 try (java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(new java.io.FileOutputStream(new java.io.File(walDir, job.getJobId() + ".result")))) {
                     out.writeObject(result);
                 } catch (Exception e) { e.printStackTrace(); }
                 
                 System.out.println("Job " + job.getJobId() + " completed.");
+                
+                // Report to leader
+                reportJobComplete(job.getJobId());
             } catch (Exception e) {
                 jobResults.put(job.getJobId(), "ERROR: " + e.getMessage());
             } finally {
+                localActiveJobs.remove(job.getJobId());
                 activeJobsCount.decrementAndGet();
             }
         });
@@ -190,20 +200,14 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
                 }
             }
         } else {
-            // I am the Leader: Scatter-gather results safely using local-only queries
             for (NodeInfo node : clusterManager.getAliveNodes()) {
                 if (node.getNodeId().equals(this.nodeId)) continue;
                 try {
                     Registry registry = LocateRegistry.getRegistry(node.getIpAddress(), node.getPort());
                     RemoteExecutorInterface remoteExec = (RemoteExecutorInterface) registry.lookup("Executor");
-
-                    // --- FIX: Call getLocalJobResult to prevent the Ping-Pong recursion loop ---
                     Object remoteResult = remoteExec.getLocalJobResult(jobId);
-
                     if (remoteResult != null) return remoteResult;
-                } catch (Exception e) {
-
-                }
+                } catch (Exception e) {}
             }
         }
         return null;
@@ -211,10 +215,83 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
 
     @Override
     public Object getLocalJobResult(String jobId) throws RemoteException {
-        // Returns the result directly from local memory without triggering any forwarding or recursion
         return jobResults.get(jobId);
     }
 
     @Override
     public void updateLeader(String leaderNodeId) throws RemoteException { }
+
+    // --- State Reconstruction Methods ---
+
+    @Override
+    public List<Job<?>> getActiveJobs() throws RemoteException {
+        return new ArrayList<>(localActiveJobs.values());
+    }
+
+    @Override
+    public void reportJobComplete(String jobId) throws RemoteException {
+        if (isLeader()) {
+            uncompletedJobs.remove(jobId);
+            for (List<String> list : nodeAssignments.values()) {
+                list.remove(jobId);
+            }
+        } else {
+            String leaderId = clusterManager.getCurrentLeader();
+            if (leaderId != null && !leaderId.equals(this.nodeId)) {
+                NodeInfo leaderInfo = clusterManager.getNodeInfo(leaderId);
+                try {
+                    Registry registry = LocateRegistry.getRegistry(leaderInfo.getIpAddress(), leaderInfo.getPort());
+                    RemoteExecutorInterface remoteLeader = (RemoteExecutorInterface) registry.lookup("Executor");
+                    remoteLeader.reportJobComplete(jobId);
+                } catch (Exception e) {}
+            }
+        }
+    }
+
+    public void rebuildGlobalState() {
+        System.out.println("[Leader] Rebuilding global state from workers...");
+        uncompletedJobs.clear();
+        nodeAssignments.clear();
+        for (NodeInfo node : clusterManager.getAliveNodes()) {
+            try {
+                List<Job<?>> jobsOnNode;
+                if (node.getNodeId().equals(this.nodeId)) {
+                    jobsOnNode = getActiveJobs();
+                } else {
+                    Registry registry = LocateRegistry.getRegistry(node.getIpAddress(), node.getPort());
+                    RemoteExecutorInterface remoteExec = (RemoteExecutorInterface) registry.lookup("Executor");
+                    jobsOnNode = remoteExec.getActiveJobs();
+                }
+                
+                List<String> jobIds = new CopyOnWriteArrayList<>();
+                for (Job<?> j : jobsOnNode) {
+                    uncompletedJobs.put(j.getJobId(), j);
+                    jobIds.add(j.getJobId());
+                }
+                nodeAssignments.put(node.getNodeId(), jobIds);
+            } catch (Exception e) {
+                System.err.println("Failed to get active jobs from " + node.getNodeId());
+            }
+        }
+    }
+
+    public void handleNodeFailure(String deadNodeId) {
+        if (!isLeader()) return;
+        
+        List<String> lostJobIds = nodeAssignments.get(deadNodeId);
+        if (lostJobIds != null && !lostJobIds.isEmpty()) {
+            System.out.println("[Leader] Node " + deadNodeId + " crashed! Re-assigning " + lostJobIds.size() + " jobs.");
+            for (String jobId : lostJobIds) {
+                Job<?> lostJob = uncompletedJobs.get(jobId);
+                if (lostJob != null) {
+                    try {
+                        submitJob(lostJob);
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+        nodeAssignments.remove(deadNodeId);
+    }
 }

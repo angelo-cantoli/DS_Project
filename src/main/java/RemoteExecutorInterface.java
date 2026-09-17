@@ -14,4 +14,8 @@ public interface RemoteExecutorInterface extends Remote {
     
     // Raft Consensus RPC
     boolean requestVote(int term, String candidateId) throws RemoteException;
+    
+    // State Reconstruction RPCs
+    java.util.List<Job<?>> getActiveJobs() throws RemoteException;
+    void reportJobComplete(String jobId) throws RemoteException;
 }

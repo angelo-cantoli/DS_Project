@@ -16,6 +16,7 @@ public class ClusterManager {
 
     private final Map<String, NodeRecord> activeNodes = new ConcurrentHashMap<>();
     private final ScheduledExecutorService failureDetector = Executors.newSingleThreadScheduledExecutor();
+    private Executor executor;
 
     // Raft Consensus State
     private NodeState state = NodeState.FOLLOWER;
@@ -34,6 +35,10 @@ public class ClusterManager {
         loadRaftState();
         resetElectionTimeout();
         failureDetector.scheduleAtFixedRate(this::checkFailures, 1, 1, TimeUnit.SECONDS);
+    }
+
+    public void setExecutor(Executor executor) {
+        this.executor = executor;
     }
 
     private void loadRaftState() {
@@ -139,6 +144,9 @@ public class ClusterManager {
                 if (entry.getKey().equals(currentLeader)) {
                     currentLeader = null;
                 }
+                if (this.executor != null) {
+                    this.executor.handleNodeFailure(entry.getKey());
+                }
             }
             return isDead;
         });
@@ -189,6 +197,9 @@ public class ClusterManager {
                         System.out.println("WON Election with " + votes + "/" + activeNodes.size() + " votes! I am LEADER for term " + currentTerm);
                         state = NodeState.LEADER;
                         currentLeader = selfNodeId;
+                        if (executor != null) {
+                            executor.rebuildGlobalState();
+                        }
                     } else {
                         System.out.println("Lost election. Got " + votes + " votes. Quorum needed: " + quorum);
                     }
