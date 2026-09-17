@@ -39,7 +39,7 @@ public class Main {
             UDPMulticastReceiver receiver = new UDPMulticastReceiver( multicastPort, clusterManager, nodeId);
             receiver.start();
 
-            List<String> clusterIps = Arrays.asList("172.20.10.2", "172.20.10.3", "172.20.10.4");
+            List<String> clusterIps = Arrays.asList("172.20.10.4", "172.20.10.3");
             UDPMulticastSender sender = new UDPMulticastSender( clusterIps, multicastPort, selfInfo, executor, clusterManager);
             sender.start();
 

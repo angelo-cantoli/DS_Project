@@ -1,9 +1,9 @@
-import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.*;
 
 public class Client {
 
@@ -20,35 +20,37 @@ public class Client {
 
     private static NodeCoordinates currentTarget = null;
     private static RemoteExecutorInterface currentExecutor = null;
+    
+    // Sostituire con gli IP reali che usi in Main.java
+    private static final List<String> CLUSTER_IPS = Arrays.asList("172.20.10.3", "172.20.10.4");
 
-    // Method to dynamically discover a live node using UDP Multicast with retry
+    // Method to dynamically discover a live node using RMI race
     private static NodeCoordinates discoverLiveNode() {
         while (true) {
-            System.out.println("Listening for cluster heartbeats on 230.0.0.0:4446...");
+            System.out.println("[Client] Contatto il cluster per stabilire una connessione...");
+            
+            ExecutorService executor = Executors.newFixedThreadPool(CLUSTER_IPS.size());
+            CompletionService<NodeCoordinates> completionService = new ExecutorCompletionService<>(executor);
 
-            try (MulticastSocket socket = new MulticastSocket(4446)) {
-                InetAddress group = InetAddress.getByName("230.0.0.0");
-                socket.joinGroup(group);
-                socket.setSoTimeout(10000);
+            for (String ip : CLUSTER_IPS) {
+                completionService.submit(() -> {
+                    Registry reg = LocateRegistry.getRegistry(ip, 1099);
+                    reg.lookup("Executor"); 
+                    return new NodeCoordinates(ip, 1099);
+                });
+            }
 
-                byte[] buffer = new byte[256];
-                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                socket.receive(packet);
-
-                String payload = new String(packet.getData(), 0, packet.getLength());
-                String[] parts = payload.split(",");
-
-                String targetIp = parts[1];
-                int targetPort = Integer.parseInt(parts[2]);
-
-                socket.leaveGroup(group);
-                System.out.println("Discovered active executor node at " + targetIp + ":" + targetPort);
-                return new NodeCoordinates(targetIp, targetPort);
+            try {
+                Future<NodeCoordinates> fastestResponse = completionService.take(); 
+                NodeCoordinates winner = fastestResponse.get();
+                
+                System.out.println("[Client] Connessione stabilita con successo al nodo: " + winner.ip);
+                return winner;
             } catch (Exception e) {
-                System.err.println("Discovery timeout or error (" + e.getMessage() + "). Retrying discovery in 2 seconds...");
-                try {
-                    Thread.sleep(2000);
-                } catch (InterruptedException ignored) {}
+                System.err.println("[Client] Nessun nodo disponibile. Nuovo tentativo in 2 secondi...");
+                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+            } finally {
+                executor.shutdownNow();
             }
         }
     }
