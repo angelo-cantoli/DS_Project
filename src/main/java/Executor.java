@@ -15,7 +15,8 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
     private final AtomicInteger activeJobsCount;
     private final ScheduledExecutorService schedulerService;
 
-    public Executor(String nodeId, ClusterManager clusterManager) throws RemoteException {
+    public Executor(String nodeId, ClusterManager clusterManager, int port) throws RemoteException {
+        super(port); // FIX: Export RMI object on the exact same fixed port to avoid Firewall blocks
         this.nodeId = nodeId;
         this.clusterManager = clusterManager;
         this.threadPool = Executors.newFixedThreadPool(4);

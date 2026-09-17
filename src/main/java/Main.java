@@ -28,7 +28,7 @@ public class Main {
         try {
             ClusterManager clusterManager = new ClusterManager(nodeId, expectedClusterSize);
 
-            Executor executor = new Executor(nodeId, clusterManager);
+            Executor executor = new Executor(nodeId, clusterManager, rmiPort);
             Registry registry = LocateRegistry.createRegistry(rmiPort);
             registry.rebind("Executor", executor);
 
