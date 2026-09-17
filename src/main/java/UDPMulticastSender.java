@@ -7,15 +7,14 @@ import java.util.List;
 public class UDPMulticastSender extends Thread {
     // multicastGroup sostituito con una lista di ip da passare nel momento in cui viene chiamato il costruttore (per remoto ip di Tailscale)
     private final List<String> peerIps;
-    private final int port;
+    private final int basePort = 4446;
     private final NodeInfo info;
     private final Executor executor;
     private final ClusterManager clusterManager;
     private boolean running = true;
 
-    public UDPMulticastSender(List<String> peerIps, int port, NodeInfo info, Executor executor, ClusterManager clusterManager) {
+    public UDPMulticastSender(List<String> peerIps, NodeInfo info, Executor executor, ClusterManager clusterManager) {
         this.peerIps = peerIps;
-        this.port = port;
         this.info = info;
         this.executor = executor;
         this.clusterManager = clusterManager;
@@ -38,12 +37,14 @@ public class UDPMulticastSender extends Thread {
                 String payload = info.getNodeId() + "," + info.getIpAddress() + "," + info.getPort() + "," + activeJobs + "," + term + "," + isLeader;
                 byte[] payloadBytes = payload.getBytes();
 
-                // Iteriamo su tutti gli ip
+                // Iteriamo su tutti gli ip E SU TUTTE LE PORTE DEL RANGE (Port Scanning)
                 for (String peerIp : peerIps) {
                     try {
                         InetAddress peerAddress = InetAddress.getByName(peerIp);
-                        DatagramPacket packet = new DatagramPacket(payloadBytes, payloadBytes.length, peerAddress, port);
-                        socket.send(packet);
+                        for (int p = basePort; p <= basePort + 6; p++) {
+                            DatagramPacket packet = new DatagramPacket(payloadBytes, payloadBytes.length, peerAddress, p);
+                            socket.send(packet);
+                        }
                     } catch (IOException e) {
                         System.out.println("Impossibile inviare heartbeat al nodo " + peerIp + ": " + e.getMessage());
                     }

@@ -7,19 +7,19 @@ public class UDPMulticastReceiver extends Thread {
     private final ClusterManager clusterManager;
     private final String nodeId;
     private boolean running = true;
+    private final DatagramSocket socket;
 
     // RImosso il gruppo
-    public UDPMulticastReceiver(int port, ClusterManager clusterManager, String nodeId) {
+    public UDPMulticastReceiver(int port, ClusterManager clusterManager, String nodeId) throws IOException {
         this.port = port;
         this.clusterManager = clusterManager;
         this.nodeId = nodeId;
+        this.socket = new DatagramSocket(port); // Fallisce SUBITO se la porta è occupata!
     }
 
     @Override
     public void run() {
-        // Sostituito MulticastSocket con DatagramSocket
-        try (DatagramSocket socket = new DatagramSocket(port)) {
-
+        try {
             byte[] buffer = new byte[256];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
 
@@ -54,6 +54,9 @@ public class UDPMulticastReceiver extends Thread {
 
     public void stopReceiver(){
         running = false;
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
         this.interrupt();
     }
 }

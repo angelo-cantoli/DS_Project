@@ -34,28 +34,50 @@ public class ClientTest {
         while (true) {
             System.out.println("[Client] Contatto il cluster per stabilire una connessione...");
             
-            ExecutorService executor = Executors.newFixedThreadPool(CLUSTER_IPS.size());
+            // Il pool deve essere abbastanza grande da gestire IPs * PORTS
+            ExecutorService executor = Executors.newFixedThreadPool(CLUSTER_IPS.size() * 7);
             CompletionService<NodeCoordinates> completionService = new ExecutorCompletionService<>(executor);
 
+            int totalTasks = 0;
             for (String ip : CLUSTER_IPS) {
-                completionService.submit(() -> {
-                    Registry reg = LocateRegistry.getRegistry(ip, 1099);
-                    reg.lookup("Executor"); 
-                    return new NodeCoordinates(ip, 1099);
-                });
+                for (int port = 1099; port <= 1105; port++) {
+                    final int p = port;
+                    completionService.submit(() -> {
+                        Registry reg = LocateRegistry.getRegistry(ip, p);
+                        reg.lookup("Executor"); 
+                        return new NodeCoordinates(ip, p);
+                    });
+                    totalTasks++;
+                }
             }
 
             try {
-                Future<NodeCoordinates> fastestResponse = completionService.take(); 
-                NodeCoordinates winner = fastestResponse.get();
+                // Aspettiamo massimo 3 secondi per avere una risposta da ALMENO un nodo
+                for (int i = 0; i < totalTasks; i++) {
+                    Future<NodeCoordinates> response = completionService.poll(3, TimeUnit.SECONDS);
+                    
+                    if (response == null) {
+                        // Timeout scaduto: nessun nodo ha risposto in tempo
+                        throw new Exception("Timeout: i nodi non rispondono (IP errati o Firewall attivo?)");
+                    }
+                    
+                    try {
+                        NodeCoordinates winner = response.get();
+                        System.out.println("[Client] Connessione stabilita con successo al nodo: " + winner.ip);
+                        return winner;
+                    } catch (ExecutionException e) {
+                        System.err.println("[DEBUG] Tentativo fallito verso un IP. Causa: " + e.getCause().getMessage());
+                        // Questo IP specifico ha rifiutato la connessione. Passiamo al prossimo.
+                    }
+                }
                 
-                System.out.println("[Client] Connessione stabilita con successo al nodo: " + winner.ip);
-                return winner;
+                throw new Exception("Tutti i nodi indicati nella lista sono offline o irraggiungibili.");
+                
             } catch (Exception e) {
-                System.err.println("[Client] Nessun nodo disponibile. Nuovo tentativo in 2 secondi...");
+                System.err.println("[Client] " + e.getMessage() + " Riprovo in 2 secondi...");
                 try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             } finally {
-                executor.shutdownNow();
+                executor.shutdownNow(); // Forza la chiusura dei thread appesi
             }
         }
     }
