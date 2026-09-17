@@ -189,43 +189,52 @@ public class ClusterManager {
         final int quorum = (expectedClusterSize / 2) + 1; 
 
         new Thread(() -> {
-            int votes = 1; // Start with 1 because we voted for ourselves
+            final java.util.concurrent.atomic.AtomicInteger votes = new java.util.concurrent.atomic.AtomicInteger(1); // Start with 1 because we voted for ourselves
+            final java.util.concurrent.atomic.AtomicBoolean electionFinished = new java.util.concurrent.atomic.AtomicBoolean(false);
             
             for (NodeRecord record : activeNodes.values()) {
                 if (record.info.getNodeId().equals(selfNodeId)) continue;
-                try {
-                    Registry reg = LocateRegistry.getRegistry(record.info.getIpAddress(), record.info.getPort());
-                    RemoteExecutorInterface stub = (RemoteExecutorInterface) reg.lookup("Executor");
-                    VoteResponse voteResp = stub.requestVote(termToRequest, selfNodeId, lastLogIndex, lastLogTerm);
-                    if (voteResp != null) {
-                        if (voteResp.getTerm() > termToRequest) {
-                            synchronized (this) {
-                                stepDown(voteResp.getTerm());
+                
+                // PARALLEL RMI CALLS: Launch a new thread for each node!
+                new Thread(() -> {
+                    try {
+                        Registry reg = LocateRegistry.getRegistry(record.info.getIpAddress(), record.info.getPort());
+                        RemoteExecutorInterface stub = (RemoteExecutorInterface) reg.lookup("Executor");
+                        VoteResponse voteResp = stub.requestVote(termToRequest, selfNodeId, lastLogIndex, lastLogTerm);
+                        
+                        if (voteResp != null) {
+                            if (voteResp.getTerm() > termToRequest) {
+                                synchronized (ClusterManager.this) {
+                                    stepDown(voteResp.getTerm());
+                                }
+                                return;
                             }
-                            return;
+                            if (voteResp.isVoteGranted()) {
+                                int currentVotes = votes.incrementAndGet();
+                                
+                                // WIN IMMEDIATELY AS SOON AS QUORUM IS REACHED
+                                synchronized (ClusterManager.this) {
+                                    if (!electionFinished.get() && state == NodeState.CANDIDATE && termToRequest == currentTerm) {
+                                        if (currentVotes >= quorum) {
+                                            electionFinished.set(true);
+                                            System.out.println("WON Election with " + currentVotes + "/" + activeNodes.size() + " votes! I am LEADER for term " + currentTerm);
+                                            state = NodeState.LEADER;
+                                            currentLeader = selfNodeId;
+                                            initLeaderState();
+                                            triggerReplication();
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        if (voteResp.isVoteGranted()) {
-                            votes++;
-                        }
+                    } catch (Exception e) {
+                        // Node unreachable, ignore
                     }
-                } catch (Exception e) {
-                    // Node unreachable, ignore
-                }
+                }).start();
             }
             
-            synchronized(this) {
-                if (state == NodeState.CANDIDATE && termToRequest == currentTerm) {
-                    if (votes >= quorum) {
-                        System.out.println("WON Election with " + votes + "/" + activeNodes.size() + " votes! I am LEADER for term " + currentTerm);
-                        state = NodeState.LEADER;
-                        currentLeader = selfNodeId;
-                        initLeaderState();
-                        triggerReplication();
-                    } else {
-                        System.out.println("Lost election. Got " + votes + " votes. Quorum needed: " + quorum);
-                    }
-                }
-            }
+            // Note: We no longer need to wait for all threads to finish. 
+            // The quorum check happens instantly inside the parallel threads!
         }).start();
     }
 

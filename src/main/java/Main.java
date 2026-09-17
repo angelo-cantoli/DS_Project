@@ -20,7 +20,7 @@ public class Main {
         //----------------------------------------------
         //------ DOBBIAMO METTERCELO A MANO!!! -------
         //----------------------------------------------
-        String realIp = "192.168.1.56";
+        String realIp = "172.20.10.3";
         System.setProperty("java.rmi.server.hostname", realIp);
         System.out.println("[INFO] Node " + nodeId + " is binding to IP: " + realIp + " on port " + rmiPort);
 
@@ -39,7 +39,7 @@ public class Main {
             UDPMulticastReceiver receiver = new UDPMulticastReceiver( multicastPort, clusterManager, nodeId);
             receiver.start();
 
-            List<String> clusterIps = Arrays.asList("", "");
+            List<String> clusterIps = Arrays.asList("172.20.10.2", "172.20.10.3", "172.20.10.4");
             UDPMulticastSender sender = new UDPMulticastSender( clusterIps, multicastPort, selfInfo, executor, clusterManager);
             sender.start();
 
