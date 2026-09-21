@@ -1,10 +1,10 @@
 # Distributed Job Scheduling System
 
-A highly resilient, decentralized job scheduling system built with Java RMI and UDP Multicast. The system features dynamic load balancing, a Raft-style leader election (with Quorums and Terms), and Write-Ahead Logs (WAL) for crash recovery.
+A highly resilient, decentralized job scheduling system built with Java RMI and UDP Multicast. The system features dynamic load balancing, a Raft-style leader election (with Quorums and Terms), and Raft-Replicated-State-Machine.
 
 ## Components
 
-1. **Server (Executor Node):** The worker nodes that form the cluster. They use UDP multicast discovery to track each other, elect a Leader, and execute jobs in a local thread pool. They use a Write-Ahead Log (WAL) to survive crashes, and the leader dynamically distributes incoming work to the least-loaded node (including itself).
+1. **Server (Executor Node):** The worker nodes that form the cluster. They use UDP multicast discovery to track each other, elect a Leader, and execute jobs in a local thread pool. They use a replicated Raft log to survive crashes, and the leader dynamically distributes incoming work to the least-loaded node (including itself) after the reaching of every commit.
 2. **Client:** Submits generic jobs (using Java Serialization and Code Mobility) and polls for results. It automatically discovers an active node via UDP multicast.
 
 ## Configuration & Network Setup
@@ -24,23 +24,23 @@ To make execution easy, both Windows Batch (`.bat`) and Linux Shell (`.sh`) scri
 
 ### 1. Start the Cluster (Servers)
 
-Open a terminal for each node you want to start. You must provide a unique Node ID, an RMI Port, and the Expected Cluster Size (to enforce strict Quorums and prevent Split-Brain).
+Open a terminal for each node you want to start. You must provide a unique Node ID and the Expected Cluster Size (to enforce strict Quorums and prevent Split-Brain).
 
 **On Linux:**
 
 ```bash
-./start-server.sh node-A 1099 3
-./start-server.sh node-B 1100 3
-./start-server.sh node-C 1101 3
+./start-server.sh node-A 3
+./start-server.sh node-B 3
+./start-server.sh node-C 3
 
 ```
 
 **On Windows:**
 
 ```powershell
-.\start-server.bat node-A 1099 3
-.\start-server.bat node-B 1100 3
-.\start-server.bat node-C 1101 3
+.\start-server.bat node-A 3
+.\start-server.bat node-B 3
+.\start-server.bat node-C 3
 
 ```
 
