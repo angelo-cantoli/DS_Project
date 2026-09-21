@@ -1,11 +1,11 @@
 #!/bin/bash
 
-if [ -z "$3" ]; then
-  echo "Usage: ./start-server.sh <nodeId> <rmiPort> <expectedClusterSize>"
-  echo "Example: ./start-server.sh node-A 1099 3"
+if [ -z "$2" ]; then
+  echo "Usage: ./start-server.sh <nodeId> <expectedClusterSize>"
+  echo "Example: ./start-server.sh node-A 3"
   exit 1
 fi
 
-echo "Starting Server Node $1 on Port $2 with Expected Cluster Size $3..."
+echo "Starting Server Node $1 with Expected Cluster Size $2 (Port is auto-assigned)..."
 
-mvn exec:java -Dexec.mainClass="Main" -Dexec.args="$1 $2 $3"
+mvn exec:java -Dexec.mainClass="Main" -Dexec.args="$1 $2"

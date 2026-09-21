@@ -21,7 +21,7 @@ public class UDPMulticastSender extends Thread {
     }
 
     public void run() {
-        // DatagramSocket invece di MulticastSocket
+
         try (DatagramSocket socket = new DatagramSocket()) {
 
             while(running) {
@@ -29,15 +29,10 @@ public class UDPMulticastSender extends Thread {
                 int term = clusterManager != null ? clusterManager.getCurrentTerm() : 0;
                 boolean isLeader = clusterManager != null && clusterManager.isLeader();
 
-                //DEBUG
-                if (activeJobs > 0) {
-                    System.out.println("[UDP SENDER] My real load is: " + activeJobs + ". Sending to cluster...");
-                }
-
                 String payload = info.getNodeId() + "," + info.getIpAddress() + "," + info.getPort() + "," + activeJobs + "," + term + "," + isLeader;
                 byte[] payloadBytes = payload.getBytes();
 
-                // Iteriamo su tutti gli ip E SU TUTTE LE PORTE DEL RANGE (Port Scanning)
+                //iterate on ip and ports of range
                 for (String peerIp : peerIps) {
                     try {
                         InetAddress peerAddress = InetAddress.getByName(peerIp);

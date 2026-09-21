@@ -16,14 +16,14 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
     private final ScheduledExecutorService schedulerService;
 
     public Executor(String nodeId, ClusterManager clusterManager, int port) throws RemoteException {
-        super(port); // FIX: Export RMI object on the exact same fixed port to avoid Firewall blocks
+        super(port);
         this.nodeId = nodeId;
         this.clusterManager = clusterManager;
         this.threadPool = Executors.newFixedThreadPool(4);
         this.activeJobsCount = new AtomicInteger(0);
         this.schedulerService = Executors.newSingleThreadScheduledExecutor();
 
-        //Avvio del loop di scheduling del Leader ogni secondo
+        // Scheduling loop started
         this.schedulerService.scheduleWithFixedDelay(this::schedulePendingJobs, 1000, 1000, TimeUnit.MILLISECONDS);
     }
 
@@ -85,7 +85,7 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
 
         System.out.println("[" + nodeId + " Leader] Proposing CREATE_JOB in Raft log for " + job.getJobId());
 
-        // Inserisce il job nel raft log
+        // Insert job in raft log
         int entryIndex = clusterManager.getRaftLog().append(
                 clusterManager.getCurrentTerm(),
                 LogEntryJob.Type.CREATE_JOB,
@@ -93,16 +93,16 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
                 job
         );
 
-        // Inzio della replica a maggioranza
+        // Start replication
         clusterManager.triggerReplication();
 
-        // Aspetta il commit
+        // Wait for commit
         boolean committed = clusterManager.waitForCommit(entryIndex, 5000);
         if (!committed) {
             throw new RemoteException("Consensus commit timeout for job " + job.getJobId());
         }
 
-        // Parte lo scheduling appena è committato
+        // Start scheduling when commited
         new Thread(this::schedulePendingJobs).start();
 
         return job.getJobId();
@@ -116,7 +116,7 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         JobStateMachine sm = clusterManager.getJobStateMachine();
         Map<String, JobMetadata> allJobs = sm.getAllJobs();
 
-        // Controlla se un nodo assegnatario di un job in corso è morto
+        // Check for dead nodes
         for (JobMetadata meta : allJobs.values()) {
             JobMetadata.State st = meta.getState();
             if (st == JobMetadata.State.ASSIGNED || st == JobMetadata.State.RUNNING) {
@@ -135,13 +135,12 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
             }
         }
 
-        //Assegna i job in stato SUBMITTED
         Set<NodeInfo> aliveNodes = clusterManager.getAliveNodes();
         if (aliveNodes.isEmpty()) {
             return;
         }
 
-        // Calcola il carico effettivo di ciascun nodo attivo direttamente dalla State Machine
+        // Calculate load of nodes
         Map<String, Integer> currentLoads = new HashMap<>();
         for (NodeInfo n : aliveNodes) {
             currentLoads.put(n.getNodeId(), 0);
@@ -177,7 +176,7 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
                     clusterManager.triggerReplication();
                     currentLoads.put(chosenNodeId, currentLoads.get(chosenNodeId) + 1);
 
-                    // Aspetta che avvenga il commit e poi contatta il worker designato per l'esecuzione
+                    // Trigger execution
                     new Thread(() -> {
                         if (clusterManager.waitForCommit(assignIndex, 5000)) {
                             dispatchJobExecution(chosenNode, jobToRun, attempt);
@@ -232,11 +231,6 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         });
     }
 
-    @Override
-    public void executeJob(Job<?> job) throws RemoteException {
-        executeJob(job, job.getAttempt() > 0 ? job.getAttempt() : 1);
-    }
-
     private void notifyJobStart(String jobId, int attempt) {
         if (isLeader()) {
             clusterManager.getRaftLog().append(clusterManager.getCurrentTerm(), LogEntryJob.Type.START_JOB, jobId, attempt);
@@ -275,7 +269,7 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
 
         JobMetadata meta = clusterManager.getJobStateMachine().getJob(jobId);
         if (meta != null) {
-            // Verifica attempt per evitare risposte obsolete da worker precedentemente considerati morti
+            // Verify attempt of completed job
             if (meta.getAttempt() != attempt) {
                 System.out.println("[" + nodeId + " Leader] Ignoring stale completion for job " + jobId +
                         " (Received attempt: " + attempt + ", Current attempt: " + meta.getAttempt() + ")");
@@ -308,12 +302,4 @@ public class Executor extends UnicastRemoteObject implements RemoteExecutorInter
         }
         return null;
     }
-
-    @Override
-    public Object getLocalJobResult(String jobId) throws RemoteException {
-        return getJobResult(jobId);
-    }
-
-    @Override
-    public void updateLeader(String leaderNodeId) throws RemoteException { }
 }

@@ -12,7 +12,6 @@ public class ClientTest {
     // Number of jobs to submit
     private static final int NUM_JOBS = 10;
 
-    // Helper class to store discovered node coordinates
     private static class NodeCoordinates {
         final String ip;
         final int port;
@@ -26,15 +25,13 @@ public class ClientTest {
     private static NodeCoordinates currentTarget = null;
     private static RemoteExecutorInterface currentExecutor = null;
 
-    // Sostituire con gli IP reali che usi in Main.java
-    private static final List<String> CLUSTER_IPS = Arrays.asList("172.20.10.2", "172.20.10.3", "172.20.10.4");
+    // Carichiamo dinamicamente gli IP dal file di configurazione
+    private static final List<String> CLUSTER_IPS = Config.getClusterIps();
 
-    // Method to dynamically discover a live node using RMI race
     private static NodeCoordinates discoverLiveNode() {
         while (true) {
             System.out.println("[Client] Contatto il cluster per stabilire una connessione...");
-            
-            // Il pool deve essere abbastanza grande da gestire IPs * PORTS
+
             ExecutorService executor = Executors.newFixedThreadPool(CLUSTER_IPS.size() * 7);
             CompletionService<NodeCoordinates> completionService = new ExecutorCompletionService<>(executor);
 
@@ -52,12 +49,10 @@ public class ClientTest {
             }
 
             try {
-                // Aspettiamo massimo 3 secondi per avere una risposta da ALMENO un nodo
                 for (int i = 0; i < totalTasks; i++) {
                     Future<NodeCoordinates> response = completionService.poll(3, TimeUnit.SECONDS);
                     
                     if (response == null) {
-                        // Timeout scaduto: nessun nodo ha risposto in tempo
                         throw new Exception("Timeout: i nodi non rispondono (IP errati o Firewall attivo?)");
                     }
                     
@@ -67,7 +62,6 @@ public class ClientTest {
                         return winner;
                     } catch (ExecutionException e) {
                         System.err.println("[DEBUG] Tentativo fallito verso un IP. Causa: " + e.getCause().getMessage());
-                        // Questo IP specifico ha rifiutato la connessione. Passiamo al prossimo.
                     }
                 }
                 
@@ -77,7 +71,7 @@ public class ClientTest {
                 System.err.println("[Client] " + e.getMessage() + " Riprovo in 2 secondi...");
                 try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             } finally {
-                executor.shutdownNow(); // Forza la chiusura dei thread appesi
+                executor.shutdownNow();
             }
         }
     }
@@ -85,14 +79,12 @@ public class ClientTest {
     private static RemoteExecutorInterface getConnectedExecutor() {
         while (currentExecutor == null) {
             try {
-                // If we already had coordinates, try to reconnect first (in case node rebooted)
                 if (currentTarget != null) {
                     try {
                         Registry reg = LocateRegistry.getRegistry(currentTarget.ip, currentTarget.port);
                         currentExecutor = (RemoteExecutorInterface) reg.lookup("Executor");
                         return currentExecutor;
                     } catch (Exception ignored) {
-                        // Node is still down, discover another live node in the cluster
                     }
                 }
 
@@ -147,14 +139,8 @@ public class ClientTest {
 
     public static void main(String[] args) {
         try {
-            // -------------------------------------------------
-            // 1. Initial connection
-            // -------------------------------------------------
             getConnectedExecutor();
 
-            // -------------------------------------------------
-            // 2. Submit multiple jobs
-            // -------------------------------------------------
             System.out.println("\nSubmitting " + NUM_JOBS + " jobs...\n");
 
             Map<String, Object> results = new HashMap<>();
@@ -184,13 +170,11 @@ public class ClientTest {
                         }
                 );
 
-                // Invio con failover automatico: sopravvive al crash del nodo contattato
                 String returnedId = safeSubmitJob(computeJob);
                 results.put(returnedId, null);
 
                 System.out.println("Submitted Job ID: " + returnedId);
 
-                // Pausa tra una sottomissione e l'altra per osservare i log
                 System.out.println("Waiting 2 seconds before next job...");
                 Thread.sleep(2000);
             }
@@ -198,9 +182,6 @@ public class ClientTest {
             long submissionEndTime = System.currentTimeMillis();
             System.out.println("\nAll jobs submitted in " + (submissionEndTime - submissionStartTime) + " ms");
 
-            // -------------------------------------------------
-            // 3. Poll for results
-            // -------------------------------------------------
             System.out.println("\nWaiting for all jobs to complete...\n");
 
             int completedJobs = 0;
@@ -217,7 +198,6 @@ public class ClientTest {
                         continue;
                     }
 
-                    // Interrogazione con failover automatico
                     Object result = safeGetJobResult(jobId);
                     if (result != null) {
                         entry.setValue(result);
@@ -236,9 +216,6 @@ public class ClientTest {
 
             long executionEndTime = System.currentTimeMillis();
 
-            // -------------------------------------------------
-            // 4. Final statistics
-            // -------------------------------------------------
             System.out.println("\n======================================");
             System.out.println("STRESS TEST COMPLETED");
             System.out.println("======================================");

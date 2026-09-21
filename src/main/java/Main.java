@@ -11,16 +11,12 @@ public class Main {
         }
 
         String nodeId = args[0];
-        // Supporto per il vecchio formato script: se ci sono 3 argomenti, il cluster size è l'ultimo
         int expectedClusterSize = Integer.parseInt(args[args.length - 1]);
         
-        //----------------------------------------------
-        //------ DOBBIAMO METTERCELO A MANO!!! -------
-        //----------------------------------------------
-        String realIp = "172.20.10.3";
+        String realIp = Config.getMyIp();
+
         System.setProperty("java.rmi.server.hostname", realIp);
 
-        // AUTO PORT SCANNING LOGIC
         int rmiPort = 1099;
         int multicastPort = 4446;
         Registry registry = null;
@@ -38,10 +34,10 @@ public class Main {
                 registry.rebind("Executor", executor);
                 
                 receiver = new UDPMulticastReceiver(multicastPort, clusterManager, nodeId);
-                receiver.start(); // Se lancia eccezione, la porta UDP è occupata
+                receiver.start(); // If execption port is occupied
                 
                 System.out.println("[INFO] Node " + nodeId + " SUCCESSFULLY bound to IP: " + realIp + " | RMI Port: " + rmiPort + " | UDP Port: " + multicastPort);
-                break; // Trovate porte libere!
+                break;
             } catch (Exception e) {
                 if (registry != null) {
                     try { java.rmi.server.UnicastRemoteObject.unexportObject(registry, true); } catch (Exception ignored) {}
@@ -49,7 +45,7 @@ public class Main {
                 if (receiver != null) {
                     receiver.stopReceiver();
                 }
-                registry = null; // Resetta per il prossimo giro
+                registry = null;
                 System.out.println("[INFO] Port " + rmiPort + " (or UDP " + multicastPort + ") in use. Trying next...");
             }
         }
@@ -63,7 +59,7 @@ public class Main {
             NodeInfo selfInfo = new NodeInfo(nodeId, realIp, rmiPort, 0, 0, false);
             clusterManager.isAlive(selfInfo);
 
-            List<String> clusterIps = Arrays.asList("172.20.10.4", "172.20.10.3");
+            List<String> clusterIps = Config.getClusterIps();
             UDPMulticastSender sender = new UDPMulticastSender(clusterIps, selfInfo, executor, clusterManager);
             sender.start();
 

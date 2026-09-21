@@ -20,7 +20,6 @@ public class ClusterManager {
     private final ScheduledExecutorService failureDetector = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledExecutorService replicationScheduler = Executors.newSingleThreadScheduledExecutor();
 
-    // Raft Consensus State
     private NodeState state = NodeState.FOLLOWER;
     private int currentTerm = 0;
     private String votedFor = null;
@@ -195,7 +194,7 @@ public class ClusterManager {
             for (NodeRecord record : activeNodes.values()) {
                 if (record.info.getNodeId().equals(selfNodeId)) continue;
                 
-                // PARALLEL RMI CALLS: Launch a new thread for each node!
+                //Launch a new thread for each node
                 new Thread(() -> {
                     try {
                         Registry reg = LocateRegistry.getRegistry(record.info.getIpAddress(), record.info.getPort());
@@ -212,7 +211,7 @@ public class ClusterManager {
                             if (voteResp.isVoteGranted()) {
                                 int currentVotes = votes.incrementAndGet();
                                 
-                                // WIN IMMEDIATELY AS SOON AS QUORUM IS REACHED
+                                //win when quorum is reached
                                 synchronized (ClusterManager.this) {
                                     if (!electionFinished.get() && state == NodeState.CANDIDATE && termToRequest == currentTerm) {
                                         if (currentVotes >= quorum) {
@@ -228,13 +227,11 @@ public class ClusterManager {
                             }
                         }
                     } catch (Exception e) {
-                        // Node unreachable, ignore
+                        //node unreachable
                     }
                 }).start();
             }
-            
-            // Note: We no longer need to wait for all threads to finish. 
-            // The quorum check happens instantly inside the parallel threads!
+
         }).start();
     }
 
@@ -412,7 +409,6 @@ public class ClusterManager {
                 LogEntryJob existing = raftLog.getEntry(idx);
                 if (existing != null) {
                     if (existing.getTerm() != newEntry.getTerm()) {
-                        // Conflict! Truncate from idx onward
                         raftLog.truncate(idx);
                         raftLog.append(newEntry);
                     }
